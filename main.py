@@ -26,8 +26,10 @@ def run_dummy_server():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Salom! Bot yangilandi va ishga tushdi. Video yuboring.")
 
+# ... (kodning tepa qismi o'sha-o'sha qoladi) ...
+
 async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    status_msg = await update.message.reply_text("⚡️ Video qabul qilindi. Tahlil boshlandi...")
+    status_msg = await update.message.reply_text("⚡️ Video tahlil qilinmoqda...")
     v_path = f"v_{update.message.chat_id}.mp4"
     a_path = f"a_{update.message.chat_id}.wav"
     f_path = f"f_{update.message.chat_id}.jpg"
@@ -42,29 +44,44 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         clip.save_frame(f_path, t=1)
         clip.close()
 
-        transcription = "Audioda hech nima topilmadi."
+        transcription = "Audio ma'lumot topilmadi."
         if os.path.exists(a_path):
             with open(a_path, "rb") as audio_file:
                 transcription = groq_client.audio.transcriptions.create(
                     file=(a_path, audio_file.read()),
                     model="whisper-large-v3",
-                    language="uz",
+                    language="uz", # Groq avtomatik tarjima qilishi ham mumkin
                     response_format="text"
                 )
 
         visual_file = genai.upload_file(path=f_path)
-        model = genai.GenerativeModel(model_name="models/gemini-flash-latest")
-        prompt = f"Videodagi ushbu kadrni va audiodagi ushbu matnni birlashtirib o'zbek tilida tahlil ber: {transcription}"
-        response = model.generate_content([visual_file, prompt])
+        model = genai.GenerativeModel(model_name="models/gemini-1.5-flash")
+        
+        # MANA SHU YERDA FORMATNI BELGILAYMIZ
+        prompt = f"""
+        Videodagi ushbu kadr va quyidagi audio matni asosida javobni aynan shu formatda qaytar:
 
-        await update.message.reply_text(f"📝 TAHLIL:\n\n{response.text}")
+        1. 📝 **ASL MATN (Original text):**
+        [Bu yerga audiodagi gaplarni tahrirlangan va xatosiz ko'rinishda yozing]
+
+        2. 🇺🇿 **O'ZBEKCHA TARJIMASI:**
+        [Agar asl matn o'zbekcha bo'lmasa, tarjima qiling. O'zbekcha bo'lsa, 'Matn o'zbek tilida' deb qo'ying]
+
+        3. 🔍 **TO'LIQ TAHLIL:**
+        [Kadr va matnni birlashtirgan holda tahlil bering]
+
+        Audio matni: {transcription}
+        """
+        
+        response = model.generate_content([visual_file, prompt])
+        await update.message.reply_text(response.text)
 
     except Exception as e:
         await update.message.reply_text(f"❌ Xato: {str(e)}")
     finally:
         for p in [v_path, a_path, f_path]:
             if os.path.exists(p): os.remove(p)
-
+# ... (qolgan qismi o'sha-o'sha) ...
 def main():
     threading.Thread(target=run_dummy_server, daemon=True).start()
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
