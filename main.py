@@ -55,26 +55,33 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
 
         visual_file = genai.upload_file(path=f_path)
-        model = genai.GenerativeModel(model_name="models/gemini-flash-latest")
+        # Tizim ko'rsatmasini yanada qat'iy qilamiz
+        model = genai.GenerativeModel(
+            model_name="models/gemini-flash-latest",
+            system_instruction="""Siz professional tahlilchisiz. 
+            MUHIM QOIDA: Javobingizda hech qanday sarlavha belgilari (#), qalinlashtirish (**), 
+            yoki yulduzchalarni (*) ishlatmang. Faqat oddiy matn va raqamlangan ro'yxatdan foydalaning."""
+        )
         
-        # MANA SHU YERDA FORMATNI BELGILAYMIZ
         prompt = f"""
-        Videodagi ushbu kadr va quyidagi audio matni asosida javobni aynan shu formatda qaytar:
+        Quyidagi formatda javob ber (belgilarsiz, faqat matn):
 
-        1. 📝 **ASL MATN (Original text):**
-        [Bu yerga audiodagi gaplarni tahrirlangan va xatosiz ko'rinishda yozing]
+        1. ASL MATN:
+        [Bu yerga audio matnini tahrirlab yozing]
 
-        2. 🇺🇿 **O'ZBEKCHA TARJIMASI:**
-        [Agar asl matn o'zbekcha bo'lmasa, tarjima qiling. O'zbekcha bo'lsa, 'Matn o'zbek tilida' deb qo'ying]
+        2. O'ZBEKCHA TARJIMASI:
+        [Matn tarjimasi yoki 'Matn o'zbek tilida' deb yozing]
 
-        3. 🔍 **TO'LIQ TAHLIL:**
-        [Kadr va matnni birlashtirgan holda tahlil bering]
+        3. TO'LIQ TAHLIL:
+        [Kadr va matn tahlili]
 
         Audio matni: {transcription}
         """
         
         response = model.generate_content([visual_file, prompt])
-        await update.message.reply_text(response.text)
+        # Telegramga yuborishdan oldin matnni ortiqcha belgilardan tozalash (qo'shimcha himoya)
+        clean_text = response.text.replace("*", "").replace("#", "").replace("`", "")
+        await update.message.reply_text(clean_text)
 
     except Exception as e:
         await update.message.reply_text(f"❌ Xato: {str(e)}")
