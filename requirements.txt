@@ -1,0 +1,4 @@
+python-telegram-bot
+groq
+google-generativeai
+moviepy
