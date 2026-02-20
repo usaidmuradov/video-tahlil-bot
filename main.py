@@ -43,7 +43,7 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Gemini orqali tasvirni tahlil qilish
         sample_file = genai.upload_file(path="frame.jpg", display_name="Frame")
-        model = genai.GenerativeModel(model_name="gemini-1.5-flash")
+        model = genai.GenerativeModel(model_name="models/gemini-flash-latest")
         response = model.generate_content([sample_file, "Ushbu videodagi kadrni tahlil qilib, nima bo'layotganini o'zbek tilida qisqa yozib ber."])
         
         await update.message.reply_text(f"Tahlil natijasi: \n\n{response.text}")
