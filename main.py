@@ -55,7 +55,7 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
 
         visual_file = genai.upload_file(path=f_path)
-        model = genai.GenerativeModel(model_name="models/gemini-1.5-flash")
+        model = genai.GenerativeModel(model_name="models/gemini-flash-latest")
         
         # MANA SHU YERDA FORMATNI BELGILAYMIZ
         prompt = f"""
