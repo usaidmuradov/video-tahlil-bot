@@ -1,6 +1,7 @@
 import os
 import asyncio
 import threading
+import time
 import http.server
 import socketserver
 from telegram import Update
@@ -17,6 +18,9 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 groq_client = Groq(api_key=GROQ_API_KEY)
 genai.configure(api_key=GEMINI_API_KEY)
 
+# Bir vaqtda ishlov berilayotgan xabarlar ro'yxati
+processed_messages = set()
+
 def run_dummy_server():
     port = int(os.environ.get("PORT", 10000))
     handler = http.server.SimpleHTTPRequestHandler
@@ -24,71 +28,79 @@ def run_dummy_server():
         httpd.serve_forever()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Salom! Bot yangilandi va ishga tushdi. Video yuboring.")
-
-# ... (kodning tepa qismi o'sha-o'sha qoladi) ...
+    await update.message.reply_text("Salom! Bot tayyor. Video yuboring.")
 
 async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg_id = update.message.message_id
+    if msg_id in processed_messages:
+        return # Agar bu xabar tahlil qilinayotgan bo'lsa, to'xtatish
+
+    processed_messages.add(msg_id)
+
+    # Fayl hajmini tekshirish (20MB)
+    if update.message.video.file_size > 20 * 1024 * 1024:
+        await update.message.reply_text("❌ Fayl juda katta. Telegram cheklovi sababli 20 MB dan kichik video yuboring.")
+        return
+
     status_msg = await update.message.reply_text("⚡️ Video tahlil qilinmoqda...")
-    v_path = f"v_{update.message.chat_id}.mp4"
-    a_path = f"a_{update.message.chat_id}.wav"
-    f_path = f"f_{update.message.chat_id}.jpg"
+
+    # Unikal nomlar yaratish
+    uid = f"{update.message.chat_id}_{int(time.time())}"
+    v_path = f"v_{uid}.mp4"
+    a_path = f"a_{uid}.wav"
+    f_path = f"f_{uid}.jpg"
 
     try:
         video_file = await context.bot.get_file(update.message.video.file_id)
         await video_file.download_to_drive(v_path)
 
         clip = VideoFileClip(v_path)
-        if clip.audio:
+        # Audio borligini tekshirish
+        has_audio = clip.audio is not None
+        if has_audio:
             clip.audio.write_audiofile(a_path, fps=16000, logger=None)
+
         clip.save_frame(f_path, t=1)
         clip.close()
 
-        transcription = "Audio ma'lumot topilmadi."
-        if os.path.exists(a_path):
+        transcription = ""
+        if has_audio and os.path.exists(a_path):
             with open(a_path, "rb") as audio_file:
                 transcription = groq_client.audio.transcriptions.create(
                     file=(a_path, audio_file.read()),
                     model="whisper-large-v3",
-                    language="uz", # Groq avtomatik tarjima qilishi ham mumkin
+                    language="uz",
                     response_format="text"
                 )
 
         visual_file = genai.upload_file(path=f_path)
-        # Tizim ko'rsatmasini yanada qat'iy qilamiz
         model = genai.GenerativeModel(
             model_name="models/gemini-flash-latest",
-            system_instruction="""Siz professional tahlilchisiz. 
-            MUHIM QOIDA: Javobingizda hech qanday sarlavha belgilari (#), qalinlashtirish (**), 
-            yoki yulduzchalarni (*) ishlatmang. Faqat oddiy matn va raqamlangan ro'yxatdan foydalaning."""
+            system_instruction="Siz video tahlilchisisiz. Javobda Markdown belgilarni (** , #) ishlatmang. Faqat oddiy matn bering."
         )
-        
+
         prompt = f"""
-        Quyidagi formatda javob ber (belgilarsiz, faqat matn):
+        Kadrda nima borligini va audio matnni tahlil qil.
+        MUHIM: Agar audio matn ('{transcription}') kadrga umuman mos kelmasa yoki ma'nosiz bo'lsa (masalan 'Long live India' kabi tushunarsiz gaplar), uni audio xatosi deb hisobla va e'tiborga olma.
 
-        1. ASL MATN:
-        [Bu yerga audio matnini tahrirlab yozing]
-
+        Javob tartibi:
+        1. ASL MATN: (Audiodagi gaplar, agar tushunarsiz bo'lsa 'Musiqa yoki tushunarsiz audio' deb yoz)
         2. O'ZBEKCHA TARJIMASI:
-        [Matn tarjimasi yoki 'Matn o'zbek tilida' deb yozing]
-
-        3. TO'LIQ TAHLIL:
-        [Kadr va matn tahlili]
-
-        Audio matni: {transcription}
+        3. TO'LIQ TAHLIL: (Kadrda ko'ringan harakatlarni batafsil yoz. Masalan, futbolchi bayroqni tepgan bo'lsa, shuni ham qo'sh)
         """
-        
+
         response = model.generate_content([visual_file, prompt])
-        # Telegramga yuborishdan oldin matnni ortiqcha belgilardan tozalash (qo'shimcha himoya)
-        clean_text = response.text.replace("*", "").replace("#", "").replace("`", "")
-        await update.message.reply_text(clean_text)
+        await update.message.reply_text(response.text)
 
     except Exception as e:
-        await update.message.reply_text(f"❌ Xato: {str(e)}")
+        print(f"Xatolik: {e}")
     finally:
+        # Fayllarni o'chirish
         for p in [v_path, a_path, f_path]:
             if os.path.exists(p): os.remove(p)
-# ... (qolgan qismi o'sha-o'sha) ...
+        # Xabarni ro'yxatdan o'chirish (5 daqiqadan keyin keshni tozalash mumkin, hozircha oddiy)
+        # processed_messages.remove(msg_id) # Bu yerda o'chirmaslik yaxshiroq
+
 def main():
     threading.Thread(target=run_dummy_server, daemon=True).start()
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
